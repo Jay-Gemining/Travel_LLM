@@ -3,13 +3,13 @@ from typing import List
 
 class PlanRequest(BaseModel):
     city: str
-    days: int = Field(..., gt=0, le=7) # gt: greater than, le: less than or equal to
+    days: int = Field(..., gt=0, le=7) # gt: 大于, le: 小于等于
     interests: List[str]
 
 # --- 内部转换模型，后端使用 ---
 class Activity(BaseModel):
     time: str
-    poi_name: str
+    poi_name: str # poi: Point of Interest (兴趣点)
     description: str
     type: str
 

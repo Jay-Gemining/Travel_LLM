@@ -2,26 +2,26 @@ import React, { useState } from 'react';
 import HomePage from './components/HomePage';
 import ResultsPage from './components/ResultsPage';
 import LoadingSpinner from './components/LoadingSpinner';
-// Assuming Tailwind CSS is set up globally, e.g., in index.css or main.css
-// import './index.css'; // Or your main Tailwind CSS entry point
+// 假设 Tailwind CSS 已全局设置，例如在 index.css 或 main.css 中
+// import './index.css'; // 或者你的 Tailwind CSS 主入口文件
 
 function App() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(null); // Stores error messages (string or null)
-  const [plan, setPlan] = useState(null);   // Will hold the itinerary JSON
+  const [isLoading, setIsLoading] = useState(false); // 是否正在加载
+  const [error, setError] = useState(null);   // 存储错误信息 (字符串或 null)
+  const [plan, setPlan] = useState(null);     // 将保存行程 JSON 数据
 
   const handleReset = () => {
     setPlan(null);
     setError(null);
-    setIsLoading(false); // Ensure loading is also reset
+    setIsLoading(false); // 确保加载状态也被重置
   };
 
-  // Render logic based on state
+  // 根据状态进行渲染的逻辑
   if (isLoading) {
     return <LoadingSpinner />;
   }
 
-  // Display error prominently if it exists, with a way to go back
+  // 如果存在错误，则显著显示错误信息，并提供返回方式
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-red-50 p-4">
@@ -39,11 +39,12 @@ function App() {
     );
   }
 
+  // 如果有行程计划数据，则显示结果页
   if (plan) {
     return <ResultsPage plan={plan} onReset={handleReset} />;
   }
 
-  // Default to HomePage
+  // 默认显示主页
   return (
     <HomePage
       setIsLoading={setIsLoading}

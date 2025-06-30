@@ -1,17 +1,17 @@
 import React from 'react';
 
 const PoiCard = ({ time, poi_name, description, type }) => {
-  // Basic icon/color mapping based on type
+  // 根据活动类型定义不同的图标和颜色
   const typeStyles = {
     '景点': { icon: '🏞️', color: 'bg-blue-100', textColor: 'text-blue-800' },
     '美食': { icon: '🍜', color: 'bg-red-100', textColor: 'text-red-800' },
     '购物': { icon: '🛍️', color: 'bg-purple-100', textColor: 'text-purple-800' },
     '体验': { icon: '🎭', color: 'bg-yellow-100', textColor: 'text-yellow-800' },
     '交通': { icon: '🚗', color: 'bg-gray-100', textColor: 'text-gray-800' },
-    'default': { icon: '📍', color: 'bg-gray-100', textColor: 'text-gray-800' }
+    'default': { icon: '📍', color: 'bg-gray-100', textColor: 'text-gray-800' } // 默认样式
   };
 
-  const currentTypeStyle = typeStyles[type] || typeStyles['default'];
+  const currentTypeStyle = typeStyles[type] || typeStyles['default']; // 获取当前类型的样式，如果未定义则使用默认样式
 
   return (
     <div className="bg-white p-4 rounded-lg shadow-md mb-4">
@@ -20,7 +20,7 @@ const PoiCard = ({ time, poi_name, description, type }) => {
         <span
           className={`text-xs font-semibold px-2 py-1 rounded-full ${currentTypeStyle.color} ${currentTypeStyle.textColor}`}
         >
-          {currentTypeStyle.icon} {type}
+          {currentTypeStyle.icon} {type} {/* 显示图标和类型文本 */}
         </span>
       </div>
       <h3 className="text-lg font-bold text-blue-700 mb-1">{poi_name}</h3>
