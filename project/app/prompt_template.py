@@ -38,3 +38,6 @@ Generate a travel plan based on the following user request:
 
 Now, generate the XML for the user's request.
 """
+# 注意：PROMPT_TEMPLATE 本身是给LLM的指令，其内容是英文，这是设计要求。
+# 此处的Python文件注释指的是Python代码本身的注释，而非PROMPT_TEMPLATE字符串内部的文本。
+# 因此，这个文件除了顶部的 `# 这个字符串是整个AI功能的核心` 之外，没有其他Python注释需要修改。
