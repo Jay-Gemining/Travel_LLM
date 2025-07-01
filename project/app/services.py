@@ -3,54 +3,58 @@ import xml.etree.ElementTree as ET
 from .schemas import ItineraryResponse, DayPlan, Activity
 from .prompt_template import PROMPT_TEMPLATE
 import os
-
-# openai.api_key = os.environ.get("OPENAI_API_KEY") # 从环境变量加载 OpenAI API密钥
+from openai import OpenAI
+from dotenv import load_dotenv
+load_dotenv()
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY") # 从环境变量加载 OpenAI API密钥
+OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL")
+MODEL = os.environ.get("MODEL")
 
 # 用于本地开发且无API密钥时的模拟LLM响应
-SIMULATED_LLM_XML_OUTPUT = """
-<itinerary city="成都" total_days="2">
-  <day number="1">
-    <activity>
-      <time>上午 (09:00-12:00)</time>
-      <poi_name>成都大熊猫繁育研究基地</poi_name>
-      <description>近距离观察可爱的国宝大熊猫，感受它们的憨态可掬。</description>
-      <type>景点</type>
-    </activity>
-    <activity>
-      <time>中午</time>
-      <poi_name>陈麻婆豆腐</poi_name>
-      <description>品尝正宗川菜麻婆豆腐的发源地，体验麻辣鲜香的极致诱惑。</description>
-      <type>美食</type>
-    </activity>
-    <activity>
-      <time>下午 (14:00-17:00)</time>
-      <poi_name>宽窄巷子</poi_name>
-      <description>漫步清末民初风格的仿古街道，感受成都的悠闲生活和历史韵味。</description>
-      <type>景点</type>
-    </activity>
-  </day>
-  <day number="2">
-    <activity>
-      <time>上午 (10:00-12:00)</time>
-      <poi_name>武侯祠</poi_name>
-      <description>探访纪念蜀汉丞相诸葛亮的祠堂，了解三国历史文化。</description>
-      <type>景点</type>
-    </activity>
-    <activity>
-      <time>中午</time>
-      <poi_name>夫妻肺片总店</poi_name>
-      <description>尝试另一道成都名菜夫妻肺片，感受其独特的复合味道。</description>
-      <type>美食</type>
-    </activity>
-    <activity>
-      <time>下午 (15:00-18:00)</time>
-      <poi_name>春熙路</poi_name>
-      <description>成都最繁华的商业街之一，尽情享受购物的乐趣。</description>
-      <type>购物</type>
-    </activity>
-  </day>
-</itinerary>
-"""
+# SIMULATED_LLM_XML_OUTPUT = """
+# <itinerary city="成都" total_days="2">
+#   <day number="1">
+#     <activity>
+#       <time>上午 (09:00-12:00)</time>
+#       <poi_name>成都大熊猫繁育研究基地</poi_name>
+#       <description>近距离观察可爱的国宝大熊猫，感受它们的憨态可掬。</description>
+#       <type>景点</type>
+#     </activity>
+#     <activity>
+#       <time>中午</time>
+#       <poi_name>陈麻婆豆腐</poi_name>
+#       <description>品尝正宗川菜麻婆豆腐的发源地，体验麻辣鲜香的极致诱惑。</description>
+#       <type>美食</type>
+#     </activity>
+#     <activity>
+#       <time>下午 (14:00-17:00)</time>
+#       <poi_name>宽窄巷子</poi_name>
+#       <description>漫步清末民初风格的仿古街道，感受成都的悠闲生活和历史韵味。</description>
+#       <type>景点</type>
+#     </activity>
+#   </day>
+#   <day number="2">
+#     <activity>
+#       <time>上午 (10:00-12:00)</time>
+#       <poi_name>武侯祠</poi_name>
+#       <description>探访纪念蜀汉丞相诸葛亮的祠堂，了解三国历史文化。</description>
+#       <type>景点</type>
+#     </activity>
+#     <activity>
+#       <time>中午</time>
+#       <poi_name>夫妻肺片总店</poi_name>
+#       <description>尝试另一道成都名菜夫妻肺片，感受其独特的复合味道。</description>
+#       <type>美食</type>
+#     </activity>
+#     <activity>
+#       <time>下午 (15:00-18:00)</time>
+#       <poi_name>春熙路</poi_name>
+#       <description>成都最繁华的商业街之一，尽情享受购物的乐趣。</description>
+#       <type>购物</type>
+#     </activity>
+#   </day>
+# </itinerary>
+# """
 
 def generate_plan_from_llm(city: str, days: int, interests: list) -> str:
     interests_str = ", ".join(interests)
@@ -59,15 +63,18 @@ def generate_plan_from_llm(city: str, days: int, interests: list) -> str:
     # 在真实场景中，你会在这里进行 OpenAI API 调用。
     # 目前，我们将返回一个模拟的 XML 响应。
     # print(f"为 LLM 生成的提示: {prompt}") # 用于调试
-
+    client = OpenAI(
+          api_key=os.getenv("OPENAI_API_KEY"),
+          base_url=os.getenv("OPENAI_BASE_URL") # if applicable
+      )
     # 模拟 LLM 调用
-    # response = openai.chat.completions.create(
-    #     model="gpt-4-1106-preview", # 或其他有能力的模型
-    #     messages=[{"role": "user", "content": prompt}],
-    #     temperature=0.7,
-    # )
-    # xml_output = response.choices[0].message.content
-
+    response = client.chat.completions.create(
+        model=MODEL, # 或其他有能力的模型
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.7,
+    )
+    xml_output = response.choices[0].message.content
+    return xml_output
     # 返回模拟的 XML 而不是进行真实的 API 调用
     # 这个模拟会使用请求中的城市和天数，以实现更动态的“模拟”，
     # 但实际内容将来自硬编码的 SIMULATED_LLM_XML_OUTPUT，
