@@ -1,130 +1,91 @@
 import openai
 import xml.etree.ElementTree as ET
-from .schemas import ItineraryResponse, DayPlan, Activity
-from .prompt_template import PROMPT_TEMPLATE
+from .schemas import ItineraryResponse, DayPlan, Activity, RegenerateRequest
+from .prompt_template import PROMPT_TEMPLATE, REGENERATE_PROMPT_TEMPLATE
 import os
 from openai import OpenAI
 from dotenv import load_dotenv
+
 load_dotenv()
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY") # 从环境变量加载 OpenAI API密钥
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL")
 MODEL = os.environ.get("MODEL")
 
-# 用于本地开发且无API密钥时的模拟LLM响应
-# SIMULATED_LLM_XML_OUTPUT = """
-# <itinerary city="成都" total_days="2">
-#   <day number="1">
-#     <activity>
-#       <time>上午 (09:00-12:00)</time>
-#       <poi_name>成都大熊猫繁育研究基地</poi_name>
-#       <description>近距离观察可爱的国宝大熊猫，感受它们的憨态可掬。</description>
-#       <type>景点</type>
-#     </activity>
-#     <activity>
-#       <time>中午</time>
-#       <poi_name>陈麻婆豆腐</poi_name>
-#       <description>品尝正宗川菜麻婆豆腐的发源地，体验麻辣鲜香的极致诱惑。</description>
-#       <type>美食</type>
-#     </activity>
-#     <activity>
-#       <time>下午 (14:00-17:00)</time>
-#       <poi_name>宽窄巷子</poi_name>
-#       <description>漫步清末民初风格的仿古街道，感受成都的悠闲生活和历史韵味。</description>
-#       <type>景点</type>
-#     </activity>
-#   </day>
-#   <day number="2">
-#     <activity>
-#       <time>上午 (10:00-12:00)</time>
-#       <poi_name>武侯祠</poi_name>
-#       <description>探访纪念蜀汉丞相诸葛亮的祠堂，了解三国历史文化。</description>
-#       <type>景点</type>
-#     </activity>
-#     <activity>
-#       <time>中午</time>
-#       <poi_name>夫妻肺片总店</poi_name>
-#       <description>尝试另一道成都名菜夫妻肺片，感受其独特的复合味道。</description>
-#       <type>美食</type>
-#     </activity>
-#     <activity>
-#       <time>下午 (15:00-18:00)</time>
-#       <poi_name>春熙路</poi_name>
-#       <description>成都最繁华的商业街之一，尽情享受购物的乐趣。</description>
-#       <type>购物</type>
-#     </activity>
-#   </day>
-# </itinerary>
-# """
+def _get_openai_client():
+    """获取 OpenAI 客户端"""
+    return OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
 
-def generate_plan_from_llm(city: str, days: int, interests: list) -> str:
-    interests_str = ", ".join(interests)
-    prompt = PROMPT_TEMPLATE.format(city=city, days=days, interests_str=interests_str)
-
-    # 在真实场景中，你会在这里进行 OpenAI API 调用。
-    # 目前，我们将返回一个模拟的 XML 响应。
-    # print(f"为 LLM 生成的提示: {prompt}") # 用于调试
-    client = OpenAI(
-          api_key=os.getenv("OPENAI_API_KEY"),
-          base_url=os.getenv("OPENAI_BASE_URL") # if applicable
-      )
-    # 模拟 LLM 调用
-    response = client.chat.completions.create(
-        model=MODEL, # 或其他有能力的模型
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.7,
-    )
-    xml_output = response.choices[0].message.content
-    return xml_output
-    # 返回模拟的 XML 而不是进行真实的 API 调用
-    # 这个模拟会使用请求中的城市和天数，以实现更动态的“模拟”，
-    # 但实际内容将来自硬编码的 SIMULATED_LLM_XML_OUTPUT，
-    # 只是更新了 city 和 total_days 属性。
-
+def _call_llm(prompt: str) -> str:
+    """调用 LLM 并返回其内容"""
     try:
-        root = ET.fromstring(SIMULATED_LLM_XML_OUTPUT)
-        root.set("city", city)
-        root.set("total_days", str(days))
+        client = _get_openai_client()
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        print(f"与 OpenAI API 通信时出错: {e}")
+        raise
 
-        # 如果请求的天数与模板不同，则调整模拟响应中的天数
-        day_nodes = root.findall("day")
-        current_simulated_days = len(day_nodes)
+def generate_plan_from_llm(city: str, days: int, interests: list, travel_style: str, must_visit_pois: list) -> str:
+    """
+    使用真实的 OpenAI API 生成旅行计划。
+    """
+    interests_str = ", ".join(interests)
+    must_visit_pois_str = ", ".join(must_visit_pois) if must_visit_pois else "无"
+    prompt = PROMPT_TEMPLATE.format(
+        city=city,
+        days=days,
+        interests_str=interests_str,
+        travel_style=travel_style,
+        must_visit_pois_str=must_visit_pois_str
+    )
+    return _call_llm(prompt)
 
-        if days < current_simulated_days:
-            # 如果请求天数较少，则删除多余的天
-            for i in range(current_simulated_days - 1, days - 1, -1):
-                root.remove(day_nodes[i])
-        elif days > current_simulated_days:
-            # 如果请求天数较多，则添加新的天
-            for i in range(current_simulated_days, days):
-                new_day_node = ET.SubElement(root, "day")
-                new_day_node.set("number", str(i + 1))
+def regenerate_activity_from_llm(request: RegenerateRequest) -> str:
+    """
+    调用LLM为一个不满意的活动生成新的建议。
+    """
+    interests_str = ", ".join(request.interests)
+    
+    # 为了给LLM提供更好的上下文，我们将当天的计划和要替换的活动格式化为字符串
+    day_plan_str = "\n".join([f"- {act.poi_name} ({act.time})" for act in request.day_plan.activities])
+    activity_to_replace_str = f"- {request.activity_to_replace.poi_name} ({request.activity_to_replace.time})"
 
-                # 为新的天添加占位活动
-                activity_node = ET.SubElement(new_day_node, "activity")
-                time_node = ET.SubElement(activity_node, "time")
-                time_node.text = "全天"
-                poi_node = ET.SubElement(activity_node, "poi_name")
-                poi_node.text = f"{city}第{i+1}天自由活动"
-                desc_node = ET.SubElement(activity_node, "description")
-                desc_node.text = f"根据您的兴趣({interests_str})自由探索{city}。"
-                type_node = ET.SubElement(activity_node, "type")
-                type_node.text = "体验"
+    prompt = REGENERATE_PROMPT_TEMPLATE.format(
+        city=request.city,
+        interests_str=interests_str,
+        travel_style=request.travel_style,
+        day_plan_str=day_plan_str,
+        activity_to_replace_str=activity_to_replace_str
+    )
+    return _call_llm(prompt)
 
-        xml_output = ET.tostring(root, encoding="unicode")
-    except Exception: # 如果XML操作失败，则回退
-        xml_output = SIMULATED_LLM_XML_OUTPUT # 返回原始模拟数据
+def _clean_xml_string(xml_string: str) -> str:
+    """清理LLM返回的可能包含额外文本的XML字符串"""
+    if "```xml" in xml_string:
+        xml_string = xml_string.split("```xml")[1].split("```")[0].strip()
+    elif "<?xml" in xml_string:
+        xml_string = xml_string.split("?>", 1)[-1].strip()
+    return xml_string.strip()
 
-    return xml_output
+def _parse_activity_node(activity_node: ET.Element) -> Activity:
+    """从XML节点解析单个活动"""
+    return Activity(
+        time=activity_node.find("time").text if activity_node.find("time") is not None else "N/A",
+        poi_name=activity_node.find("poi_name").text if activity_node.find("poi_name") is not None else "N/A",
+        description=activity_node.find("description").text if activity_node.find("description") is not None else "N/A",
+        type=activity_node.find("type").text if activity_node.find("type") is not None else "N/A",
+        lat=float(activity_node.find("lat").text) if activity_node.find("lat") is not None and activity_node.find("lat").text else 0.0,
+        lon=float(activity_node.find("lon").text) if activity_node.find("lon") is not None and activity_node.find("lon").text else 0.0,
+        travel_from_previous=activity_node.find("travel_from_previous").text if activity_node.find("travel_from_previous") is not None else "N/A",
+    )
 
 def parse_xml_to_json(xml_string: str) -> ItineraryResponse:
     try:
-        # 清理输入：LLM有时可能在XML之外包含markdown或其他文本
-        if "```xml" in xml_string:
-            xml_string = xml_string.split("```xml")[1].split("```")[0].strip()
-        elif "<?xml" in xml_string: # 处理XML声明存在的情况
-             xml_string = xml_string.split("?>", 1)[-1].strip()
-
-
+        xml_string = _clean_xml_string(xml_string)
         root = ET.fromstring(xml_string)
 
         itinerary_data = {
@@ -134,23 +95,25 @@ def parse_xml_to_json(xml_string: str) -> ItineraryResponse:
         }
 
         for day_node in root.findall("day"):
-            day_plan_data = { # 更改变量名以避免与DayPlan模型冲突
+            day_plan_data = {
                 "day": int(day_node.attrib.get("number")),
                 "activities": []
             }
             for activity_node in day_node.findall("activity"):
-                activity_data = {
-                    "time": activity_node.find("time").text if activity_node.find("time") is not None else "N/A",
-                    "poi_name": activity_node.find("poi_name").text if activity_node.find("poi_name") is not None else "N/A",
-                    "description": activity_node.find("description").text if activity_node.find("description") is not None else "N/A",
-                    "type": activity_node.find("type").text if activity_node.find("type") is not None else "N/A",
-                }
-                day_plan_data["activities"].append(Activity(**activity_data))
+                day_plan_data["activities"].append(_parse_activity_node(activity_node))
             itinerary_data["itinerary"].append(DayPlan(**day_plan_data))
 
         return ItineraryResponse(**itinerary_data)
-    except ET.ParseError as e:
-        raise ValueError(f"解析 LLM XML 输出失败 (ParseError): {e}。收到的XML (前500字符): {xml_string[:500]}...") # 包含XML的开头部分以便调试
-    except Exception as e:
-        # 处理其他解析错误，LLM可能返回格式错误的XML
-        raise ValueError(f"解析 LLM XML 输出失败 (General Error): {e}。收到的XML (前500字符): {xml_string[:500]}...")
+    except (ET.ParseError, ValueError, TypeError) as e:
+        raise ValueError(f"解析 LLM XML 输出失败: {e}。收到的XML (前500字符): {xml_string[:500]}...")
+
+def parse_single_activity_xml(xml_string: str) -> Activity:
+    """解析用于替换的单个activity XML"""
+    try:
+        xml_string = _clean_xml_string(xml_string)
+        activity_node = ET.fromstring(xml_string)
+        return _parse_activity_node(activity_node)
+    except (ET.ParseError, ValueError, TypeError) as e:
+        raise ValueError(f"解析 LLM 单个活动 XML 输出失败: {e}。收到的XML: {xml_string}")
+
+
