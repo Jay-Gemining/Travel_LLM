@@ -1,0 +1,31 @@
+# Node
+node_modules/
+dist/
+.parcel-cache/
+build/
+.env
+*.local
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+pip-wheel-metadata/
+.pytest_cache/
+.mypy_cache/
+.tox/
+*.egg-info/
+*.egg
+
+# IDE / OS
+.vscode/
+.idea/
+*.DS_Store
+Thumbs.db
+
+# Saved itineraries (if they are considered build artifacts or user data not to be committed)
+# saved_itineraries/

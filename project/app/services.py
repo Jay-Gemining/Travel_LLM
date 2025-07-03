@@ -102,6 +102,10 @@ def _parse_itinerary_item_node(item_node: ET.Element) -> ItineraryItem:
         booking_info=get_text("booking_info"),
         price=get_text("price"),
         local_tip=get_text("local_tip"),
+        is_outdoor=get_text("is_outdoor", "false").lower() == "true", # Convert to boolean
+        plan_b_poi_name=get_text("plan_b_poi_name", "N/A"),
+        plan_b_description=get_text("plan_b_description", "N/A"),
+        plan_b_category=get_text("plan_b_category", "N/A"),
     )
 
 def parse_xml_to_json(xml_string: str) -> ItineraryResponse:

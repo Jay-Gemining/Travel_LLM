@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
+import uuid
 
 # --- Nested Models ---
 
@@ -20,6 +21,11 @@ class ItineraryItem(BaseModel):
     booking_info: str
     price: str
     local_tip: str
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    is_outdoor: Optional[bool] = None
+    plan_b_poi_name: Optional[str] = None
+    plan_b_description: Optional[str] = None
+    plan_b_category: Optional[str] = None
 
 class DayPlan(BaseModel):
     day: int
