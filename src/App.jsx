@@ -7,13 +7,20 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [plan, setPlan] = useState(null);
-  const [initialRequest, setInitialRequest] = useState(null); // 保存最初的请求参数
+  const [initialRequest, setInitialRequest] = useState(null); // Save the initial request parameters
 
   const handleReset = () => {
     setPlan(null);
     setError(null);
     setIsLoading(false);
     setInitialRequest(null);
+  };
+
+  const handleGenerate = (request, response) => {
+    setInitialRequest(request);
+    setPlan(response);
+    setIsLoading(false);
+    setError(null);
   };
 
   if (isLoading) {
@@ -24,13 +31,13 @@ function App() {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-red-50 p-4">
         <div className="bg-white p-8 rounded-lg shadow-xl text-center max-w-md">
-          <h2 className="text-2xl font-bold text-red-600 mb-4">发生错误</h2>
+          <h2 className="text-2xl font-bold text-red-600 mb-4">An Error Occurred</h2>
           <p className="text-gray-700 mb-6">{error}</p>
           <button
             onClick={handleReset}
             className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-150"
           >
-            返回首页重试
+            Return to Homepage
           </button>
         </div>
       </div>
@@ -45,8 +52,7 @@ function App() {
     <HomePage
       setIsLoading={setIsLoading}
       setError={setError}
-      setPlan={setPlan}
-      setInitialRequest={setInitialRequest}
+      onGenerate={handleGenerate}
     />
   );
 }

@@ -1,36 +1,58 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
-# --- API 请求与响应模型 ---
+# --- Nested Models ---
+
+class FoodPreferences(BaseModel):
+    price_range: str
+    cuisine_types: List[str]
+    dietary_restrictions: Optional[str] = ""
+
+class ItineraryItem(BaseModel):
+    category: str = Field(..., description="类别，例如 '景点', '美食', '购物', '体验'")
+    time: str
+    poi_name: str
+    description: str
+    lat: float
+    lon: float
+    travel_from_previous: str
+    opening_hours: str
+    booking_info: str
+    price: str
+    local_tip: str
+
+class DayPlan(BaseModel):
+    day: int
+    activities: List[ItineraryItem]
+
+# --- API Request Models ---
 
 class PlanRequest(BaseModel):
     city: str
     days: int = Field(..., gt=0, le=7)
     interests: List[str]
-    travel_style: str = "普通" # "悠闲", "普通", "紧凑"
+    travel_style: str = "普通"
     must_visit_pois: Optional[List[str]] = []
+    budget: str = "标准"
+    food_preferences: FoodPreferences
 
-class Activity(BaseModel):
-    time: str
-    poi_name: str
-    description: str
-    type: str
-    lat: float
-    lon: float
-    travel_from_previous: str
+class RegenerateRequest(BaseModel):
+    city: str
+    day_plan: DayPlan
+    activity_to_replace: ItineraryItem
+    interests: List[str]
+    travel_style: str
+    budget: str
+    food_preferences: FoodPreferences
 
-class DayPlan(BaseModel):
-    day: int
-    activities: List[Activity]
+# --- API Response Models ---
 
 class ItineraryResponse(BaseModel):
     city: str
     total_days: int
     itinerary: List[DayPlan]
 
-class RegenerateRequest(BaseModel):
-    city: str
-    day_plan: DayPlan # 当天的完整计划，用于提供上下文
-    activity_to_replace: Activity # 需要被替换的活动
-    interests: List[str]
-    travel_style: str
+class SaveResponse(BaseModel):
+    success: bool
+    message: str
+    itinerary_id: Optional[str] = None
