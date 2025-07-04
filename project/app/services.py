@@ -1,12 +1,14 @@
 import openai
 import xml.etree.ElementTree as ET
+import asyncio
 from .schemas import (
-    ItineraryResponse, DayPlan, ItineraryItem, RegenerateRequest, PlanRequest, 
+    ItineraryResponse, DayPlan, ItineraryItem, RegenerateRequest, PlanRequest,
     FoodPreferences, SaveResponse
 )
-from .prompt_template import PROMPT_TEMPLATE, REGENERATE_PROMPT_TEMPLATE
+from .prompt_template import PROMPT_TEMPLATE, REGENERATE_PROMPT_TEMPLATE, RECALCULATE_TRAVEL_PROMPT_TEMPLATE
 import os
 import uuid
+import xml.etree.ElementTree as ET
 import json
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -19,19 +21,58 @@ MODEL = os.environ.get("MODEL")
 
 # --- Utility Functions ---
 
-def _get_openai_client():
-    """Initializes and returns the OpenAI client."""
+def _get_openai_client_sync():
+    """Initializes and returns the synchronous OpenAI client."""
     return OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
 
-def _call_llm(prompt: str) -> str:
-    """Calls the LLM and returns its content, with error handling."""
+async def _get_openai_client_async():
+    """Initializes and returns the asynchronous OpenAI client."""
+    # Assuming the OpenAI library supports an async client or we use httpx for async calls
+    # For now, let's use the sync client in a thread to avoid blocking
+    # This is a common pattern if the SDK doesn't have a native async client or if it's complex to switch
+    # from openai import AsyncOpenAI # This would be ideal if available and configured
+    # return AsyncOpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
+    #
+    # Using a placeholder for actual async call for now, or run sync in executor
+    # For simplicity in this step, we'll run the sync call in an executor
+    import asyncio
+    return _get_openai_client_sync() # Placeholder, will be used with run_in_executor
+
+
+async def _call_llm_async(prompt: str) -> str:
+    """Calls the LLM asynchronously and returns its content, with error handling."""
     try:
-        client = _get_openai_client()
+        # Ideal: client = await _get_openai_client_async()
+        # response = await client.chat.completions.create(...)
+        # For now, running the synchronous call in an executor
+        client = _get_openai_client_sync() # This is sync
+        
+        # Wrap the synchronous SDK call in asyncio.to_thread (Python 3.9+)
+        # or loop.run_in_executor for broader compatibility.
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None, # Uses the default thread pool executor
+            lambda: client.chat.completions.create(
+                model=MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.8,
+            )
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        print(f"Error communicating with OpenAI API: {e}")
+        raise
+
+# This synchronous version might still be needed if called from non-async code,
+# but FastAPI endpoints should use the async version.
+def _call_llm_sync(prompt: str) -> str:
+    """Synchronous LLM call (original _call_llm renamed)."""
+    try:
+        client = _get_openai_client_sync()
         response = client.chat.completions.create(
             model=MODEL,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.8, # Increased temperature slightly for more creative/varied results
-            # response_format={"type": "text"}, # Ensuring text output
+            temperature=0.8, 
         )
         return response.choices[0].message.content
     except Exception as e:
@@ -49,7 +90,7 @@ def _clean_xml_string(xml_string: str) -> str:
 
 # --- Core Service Functions ---
 
-def generate_plan_from_llm(request: PlanRequest) -> str:
+async def generate_plan_from_llm(request: PlanRequest) -> str:
     """Generates a travel plan by formatting a prompt and calling the LLM."""
     prompt = PROMPT_TEMPLATE.format(
         city=request.city,
@@ -62,9 +103,9 @@ def generate_plan_from_llm(request: PlanRequest) -> str:
         food_cuisine_types=", ".join(request.food_preferences.cuisine_types),
         food_dietary_restrictions=request.food_preferences.dietary_restrictions or "无"
     )
-    return _call_llm(prompt)
+    return await _call_llm_async(prompt)
 
-def regenerate_activity_from_llm(request: RegenerateRequest) -> str:
+async def regenerate_activity_from_llm(request: RegenerateRequest) -> str:
     """Generates a new activity suggestion by calling the LLM."""
     day_plan_str = "\n".join([f"- {act.poi_name} ({act.time}, {act.category})" for act in request.day_plan.activities])
     activity_to_replace_str = f"- {request.activity_to_replace.poi_name} ({request.activity_to_replace.time}, {request.activity_to_replace.category})"
@@ -80,7 +121,55 @@ def regenerate_activity_from_llm(request: RegenerateRequest) -> str:
         day_plan_str=day_plan_str,
         activity_to_replace_str=activity_to_replace_str
     )
-    return _call_llm(prompt)
+    return await _call_llm_async(prompt)
+
+# --- Itinerary to XML Conversion for Recalculation ---
+def _itinerary_response_to_xml_string(plan: ItineraryResponse) -> str:
+    """Converts an ItineraryResponse object to an XML string for the recalculation prompt."""
+    root = ET.Element("itinerary")
+    root.set("city", plan.city)
+    root.set("total_days", str(plan.total_days))
+
+    for day_plan in plan.itinerary:
+        day_el = ET.SubElement(root, "day")
+        day_el.set("number", str(day_plan.day))
+        for activity in day_plan.activities:
+            item_el = ET.SubElement(day_el, "item")
+            
+            ET.SubElement(item_el, "category").text = activity.category
+            ET.SubElement(item_el, "time").text = activity.time
+            ET.SubElement(item_el, "poi_name").text = activity.poi_name
+            ET.SubElement(item_el, "description").text = activity.description
+            ET.SubElement(item_el, "lat").text = str(activity.lat)
+            ET.SubElement(item_el, "lon").text = str(activity.lon)
+            # For recalculation, travel_from_previous might be stale, but we send it as is.
+            # The LLM is tasked to recalculate this specific field.
+            ET.SubElement(item_el, "travel_from_previous").text = activity.travel_from_previous
+            ET.SubElement(item_el, "opening_hours").text = activity.opening_hours
+            ET.SubElement(item_el, "booking_info").text = activity.booking_info
+            ET.SubElement(item_el, "price").text = activity.price
+            ET.SubElement(item_el, "local_tip").text = activity.local_tip
+            
+    # Convert the XML tree to a string
+    # ET.indent(root) # For pretty printing, if supported and desired (Python 3.9+)
+    return ET.tostring(root, encoding="unicode")
+
+async def recalculate_itinerary_travel_times(plan: ItineraryResponse) -> str:
+    """
+    Takes an existing itinerary, converts it to XML, sends it to the LLM (asynchronously)
+    for travel time recalculation, and returns the new XML itinerary.
+    """
+    itinerary_xml_str = _itinerary_response_to_xml_string(plan)
+    
+    prompt = RECALCULATE_TRAVEL_PROMPT_TEMPLATE.format(
+        city=plan.city,
+        total_days=plan.total_days,
+        itinerary_xml_string=itinerary_xml_str
+    )
+    
+    # The LLM is expected to return a full XML itinerary string with updated travel times.
+    # This string will then be parsed by parse_xml_to_json by the caller in main.py
+    return await _call_llm_async(prompt)
 
 # --- XML Parsing Functions ---
 
@@ -91,6 +180,7 @@ def _parse_itinerary_item_node(item_node: ET.Element) -> ItineraryItem:
         return element.text.strip() if element is not None and element.text else default
 
     return ItineraryItem(
+        id=str(uuid.uuid4()), # Generate a unique ID for each item
         category=get_text("category", "景点"),
         time=get_text("time"),
         poi_name=get_text("poi_name"),

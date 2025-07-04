@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import axios from 'axios';
 import PoiCard from './PoiCard';
+import MapView from './MapView';
+import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
 
 // --- Helper Functions ---
 const copyToClipboard = (text, onSuccess) => {
@@ -31,10 +33,66 @@ const generateShareableText = (plan) => {
 
 // --- Main Component ---
 const ResultsPage = ({ plan, setPlan, onReset, initialRequest }) => {
+  console.log("ResultsPage received plan:", plan);
   const [activeDayIndex, setActiveDayIndex] = useState(0);
   const [regeneratingActivity, setRegeneratingActivity] = useState(null);
   const [showShareFeedback, setShowShareFeedback] = useState(false);
   const [saveStatus, setSaveStatus] = useState({ loading: false, message: '' });
+  const [isUpdatingItinerary, setIsUpdatingItinerary] = useState(false);
+
+  useEffect(() => {
+    if (!plan || !Array.isArray(plan.itinerary)) {
+      setActiveDayIndex(0); // Reset if plan or itinerary is invalid
+      return;
+    }
+
+    const numDays = plan.itinerary.length;
+    if (numDays === 0) {
+      setActiveDayIndex(0); // No days, so active index is 0
+    } else if (activeDayIndex >= numDays) {
+      setActiveDayIndex(numDays - 1); // Adjust to the last valid day
+    }
+  }, [plan, activeDayIndex]);
+
+  const debounce = (func, delay) => {
+    let timeoutId;
+    return (...args) => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(async () => { // Mark this callback as async
+        await func.apply(this, args); // Await the async function
+      }, delay);
+    };
+  };
+
+  const debouncedUpdateItineraryApiCall = useCallback(
+    debounce(async (updatedPlan) => {
+      setIsUpdatingItinerary(true);
+      try {
+        const response = await axios.post('/api/update-itinerary', updatedPlan);
+        setPlan(response.data);
+      } catch (error) {
+        console.error("Error updating itinerary:", error);
+        alert("行程更新失败，部分信息可能未正确同步。请尝试刷新或重新规划。");
+      } finally {
+        setIsUpdatingItinerary(false);
+      }
+    }, 1500),
+    [setPlan]
+  );
+
+  const handleOnDragEnd = (result) => {
+    if (!result.destination) return;
+
+    const items = Array.from(plan.itinerary[activeDayIndex].activities);
+    const [reorderedItem] = items.splice(result.source.index, 1);
+    items.splice(result.destination.index, 0, reorderedItem);
+
+    const updatedPlan = { ...plan };
+    updatedPlan.itinerary[activeDayIndex].activities = items;
+
+    setPlan(updatedPlan);
+    debouncedUpdateItineraryApiCall(updatedPlan);
+  };
 
   const handleRegenerate = async (dayIndex, activityIndex) => {
     setRegeneratingActivity({ dayIndex, activityIndex });
@@ -49,8 +107,19 @@ const ResultsPage = ({ plan, setPlan, onReset, initialRequest }) => {
       });
       const newActivity = response.data;
       
-      const updatedPlan = { ...plan };
-      updatedPlan.itinerary[dayIndex].activities[activityIndex] = newActivity;
+      const newItinerary = plan.itinerary.map((day, dIdx) => {
+        if (dIdx === dayIndex) {
+          const newActivities = day.activities.map((activity, aIdx) => {
+            if (aIdx === activityIndex) {
+              return newActivity;
+            }
+            return activity;
+          });
+          return { ...day, activities: newActivities };
+        }
+        return day;
+      });
+      const updatedPlan = { ...plan, itinerary: newItinerary };
       setPlan(updatedPlan);
 
     } catch (error) {
@@ -59,6 +128,52 @@ const ResultsPage = ({ plan, setPlan, onReset, initialRequest }) => {
     } finally {
       setRegeneratingActivity(null);
     }
+  };
+
+  const handleDeleteActivity = (dayIndex, activityIndex) => {
+    const newItinerary = plan.itinerary.map((day, dIdx) => {
+      if (dIdx === dayIndex) {
+        const newActivities = day.activities.filter((_, aIdx) => aIdx !== activityIndex);
+        if (newActivities.length === 0) {
+          return null; // Mark this day for removal
+        }
+        return { ...day, activities: newActivities };
+      }
+      return day;
+    }).filter(Boolean); // Filter out null days
+
+    const updatedPlan = { ...plan, itinerary: newItinerary };
+
+    let newActiveDayIndex = activeDayIndex;
+    if (newItinerary.length < plan.itinerary.length) {
+      if (activeDayIndex === dayIndex) {
+        newActiveDayIndex = Math.max(0, dayIndex - 1);
+      } else if (activeDayIndex > dayIndex) {
+        newActiveDayIndex = activeDayIndex - 1;
+      }
+    }
+    setActiveDayIndex(newActiveDayIndex);
+
+    setPlan(updatedPlan);
+    debouncedUpdateItineraryApiCall(updatedPlan);
+  };
+
+  const handleTimeChange = (dayIndex, activityIndex, newTime) => {
+    const newItinerary = plan.itinerary.map((day, dIdx) => {
+      if (dIdx === dayIndex) {
+        const newActivities = day.activities.map((activity, aIdx) => {
+          if (aIdx === activityIndex) {
+            return { ...activity, time: newTime };
+          }
+          return activity;
+        });
+        return { ...day, activities: newActivities };
+      }
+      return day;
+    });
+    const updatedPlan = { ...plan, itinerary: newItinerary };
+    setPlan(updatedPlan);
+    debouncedUpdateItineraryApiCall(updatedPlan);
   };
 
   const handleSave = async () => {
@@ -82,7 +197,7 @@ const ResultsPage = ({ plan, setPlan, onReset, initialRequest }) => {
     });
   };
 
-  if (!plan?.itinerary?.length) {
+  if (!plan || !Array.isArray(plan.itinerary) || plan.itinerary.length === 0 || !plan.itinerary.some(day => day && day.activities && day.activities.length > 0)) {
     return (
       <div className="p-6 max-w-3xl mx-auto text-center">
         <h1 className="text-2xl font-bold text-red-500 mb-6">行程生成失败或无有效数据</h1>
@@ -93,7 +208,7 @@ const ResultsPage = ({ plan, setPlan, onReset, initialRequest }) => {
     );
   }
 
-  const currentDayData = plan.itinerary[activeDayIndex];
+  const currentDayData = plan?.itinerary?.[activeDayIndex] || { day: 0, activities: [] };
 
   return (
     <div className="bg-gray-50 min-h-screen">
@@ -119,46 +234,84 @@ const ResultsPage = ({ plan, setPlan, onReset, initialRequest }) => {
         <h1 className="text-3xl md:text-4xl font-bold text-center text-blue-800 mb-2">
           您的 <span className="text-green-600">{plan.city}</span> {plan.total_days}日专属行程
         </h1>
-        <p className="text-center text-gray-600 mb-8">v1.2 - 根据您的预算和餐饮偏好精心策划</p>
+        <p className="text-center text-gray-600 mb-8">v2.0 - 支持拖拽排序和地图可视化</p>
 
         {/* --- Day Tabs --- */}
-        {plan.itinerary.length > 1 && (
+        {plan && Array.isArray(plan.itinerary) && plan.itinerary.length > 0 && (
           <div className="mb-8 flex flex-wrap justify-center border-b-2 border-gray-200 pb-2">
-            {plan.itinerary.map((dayPlan, index) => (
-              <button
-                key={dayPlan.day}
-                onClick={() => setActiveDayIndex(index)}
-                className={`px-4 py-2 mx-1 my-1 rounded-md font-medium transition-colors duration-150 ${
-                  activeDayIndex === index
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'bg-gray-100 text-gray-700 hover:bg-blue-100'
-                }`}
-              >
-                第 {dayPlan.day} 天
-              </button>
-            ))}
+            {(plan.itinerary || [])
+              .filter(dayPlan => dayPlan && typeof dayPlan === 'object' && 'day' in dayPlan) // Explicitly filter valid dayPlan objects
+              .map((dayPlan, index) => {
+                return (
+                  <button
+                    key={dayPlan.day} // Use dayPlan.day as key
+                    onClick={() => setActiveDayIndex(index)}
+                    className={`px-4 py-2 mx-1 my-1 rounded-md font-medium transition-colors duration-150 ${
+                      activeDayIndex === index
+                        ? 'bg-blue-600 text-white shadow-md'
+                        : 'bg-gray-100 text-gray-700 hover:bg-blue-100'
+                    }`}
+                  >
+                    第 {dayPlan.day} 天
+                  </button>
+                );
+              })}
+          </div>
+        )}
+        
+        {isUpdatingItinerary && (
+          <div className="fixed top-4 right-4 bg-yellow-500 text-white text-sm font-semibold py-2 px-4 rounded-lg shadow-lg z-50">
+            正在同步更新行程...
           </div>
         )}
 
-        {/* --- Activities for the selected day --- */}
+        {/* --- Activities and Map for the selected day --- */}
         {currentDayData && (
-          <div>
-            <h2 className="text-2xl font-semibold text-gray-800 mb-4">
-              第 {currentDayData.day} 天活动安排
-            </h2>
-            {currentDayData.activities?.length > 0 ? (
-              currentDayData.activities.map((activity, index) => (
-                <PoiCard
-                  key={`${currentDayData.day}-${index}-${activity.poi_name}`}
-                  activity={activity}
-                  onRegenerate={() => handleRegenerate(activeDayIndex, index)}
-                  isRegenerating={regeneratingActivity?.dayIndex === activeDayIndex && regeneratingActivity?.activityIndex === index}
-                  isFirst={index === 0}
-                />
-              ))
-            ) : (
-              <p className="text-gray-600">今天没有特别安排的活动。</p>
-            )}
+          <div className="lg:flex lg:gap-8">
+            <div className="lg:w-1/2">
+              <h2 className="text-2xl font-semibold text-gray-800 mb-4">
+                第 {currentDayData.day} 天活动安排
+              </h2>
+              <DragDropContext onDragEnd={handleOnDragEnd}>
+                <Droppable droppableId="activities">
+                  {(provided) => (
+                    <div {...provided.droppableProps} ref={provided.innerRef}>
+                      {currentDayData.activities?.length > 0 ? (
+                        currentDayData.activities.map((activity, index) => (
+                          <Draggable key={activity.id} draggableId={activity.id} index={index}>
+                            {(provided, snapshot) => (
+                              <div
+                                ref={provided.innerRef}
+                                {...provided.draggableProps}
+                                {...provided.dragHandleProps}
+                              >
+                                <PoiCard
+                                  activity={activity}
+                                  onRegenerate={() => handleRegenerate(activeDayIndex, index)}
+                                  isRegenerating={regeneratingActivity?.dayIndex === activeDayIndex && regeneratingActivity?.activityIndex === index}
+                                  isFirst={index === 0}
+                                  onDeleteActivity={() => handleDeleteActivity(activeDayIndex, index)}
+                                  onTimeChange={(newTime) => handleTimeChange(activeDayIndex, index, newTime)}
+                                />
+                              </div>
+                            )}
+                          </Draggable>
+                        ))
+                      ) : (
+                        <p className="text-gray-600">今天没有特别安排的活动。</p>
+                      )}
+                      {provided.placeholder}
+                    </div>
+                  )}
+                </Droppable>
+              </DragDropContext>
+            </div>
+            <div className="lg:w-1/2 mt-8 lg:mt-0">
+              <h2 className="text-2xl font-semibold text-gray-800 mb-4">
+                地图视图
+              </h2>
+              <MapView activities={currentDayData.activities} />
+            </div>
           </div>
         )}
       </div>

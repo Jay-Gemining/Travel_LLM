@@ -12,7 +12,8 @@ from .services import (
     parse_xml_to_json, 
     regenerate_activity_from_llm,
     parse_single_activity_xml,
-    save_itinerary_to_file
+    save_itinerary_to_file,
+    recalculate_itinerary_travel_times
 )
 import logging
 
@@ -35,7 +36,7 @@ async def create_plan(request: PlanRequest):
     logger.info(f"Received itinerary planning request for {request.city}")
     try:
         logger.info("Generating itinerary plan from LLM...")
-        xml_response = generate_plan_from_llm(request)
+        xml_response = await generate_plan_from_llm(request)
         logger.info(f"Received LLM XML response snippet: {xml_response[:150]}...")
 
         logger.info("Parsing XML to JSON...")
@@ -56,7 +57,7 @@ async def regenerate_activity(request: RegenerateRequest):
     logger.info(f"Received activity regeneration request for '{request.activity_to_replace.poi_name}'")
     try:
         logger.info("Getting new activity suggestion from LLM...")
-        xml_response = regenerate_activity_from_llm(request)
+        xml_response = await regenerate_activity_from_llm(request)
         logger.info(f"Received LLM XML response: {xml_response}")
 
         logger.info("Parsing single activity XML...")
@@ -86,3 +87,33 @@ async def save_itinerary(itinerary: ItineraryResponse = Body(...)):
     except Exception as e:
         logger.error(f"Unexpected error during itinerary save: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"An unexpected server error occurred: {e}")
+
+@app.post("/api/update-itinerary", response_model=ItineraryResponse)
+async def update_itinerary(request_plan: ItineraryResponse = Body(...)):
+    """
+    Receives a potentially modified itinerary, recalculates travel times using LLM,
+    and returns the updated itinerary.
+    """
+    logger.info(f"Received itinerary update request for {request_plan.city}")
+    try:
+        logger.info("Recalculating travel times for the itinerary using LLM...")
+        # The service function returns an XML string
+        updated_xml_response = await recalculate_itinerary_travel_times(request_plan)
+        logger.info(f"Received updated LLM XML response snippet: {updated_xml_response[:150]}...")
+
+        logger.info("Parsing updated XML to JSON...")
+        # Use the existing XML parsing function
+        json_response = parse_xml_to_json(updated_xml_response)
+        logger.info("Successfully parsed updated XML to JSON.")
+
+        # Optionally, one might want to save this updated itinerary here as well.
+        # For now, just returning the updated version.
+        # save_itinerary_to_file(json_response) 
+
+        return json_response
+    except ValueError as e:
+        logger.error(f"ValueError during itinerary update: {e}")
+        raise HTTPException(status_code=500, detail=f"LLM response parsing error during update: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error during itinerary update: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred during update: {e}")

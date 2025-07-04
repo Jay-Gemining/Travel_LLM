@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
+import uuid
 
 # --- Nested Models ---
 
@@ -9,6 +10,7 @@ class FoodPreferences(BaseModel):
     dietary_restrictions: Optional[str] = ""
 
 class ItineraryItem(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="Unique ID for the itinerary item")
     category: str = Field(..., description="类别，例如 '景点', '美食', '购物', '体验'")
     time: str
     poi_name: str

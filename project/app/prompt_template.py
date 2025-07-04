@@ -114,3 +114,64 @@ Here is the context:
 
 Now, generate a new `<item>` block to replace the one provided.
 """
+
+RECALCULATE_TRAVEL_PROMPT_TEMPLATE = """
+You are a travel logistics expert. Your task is to update the travel times for a given itinerary.
+The user has modified their itinerary (e.g., reordered activities, added/deleted items) and needs the "travel_from_previous" fields updated.
+Do NOT change any other details of the activities (poi_name, description, time, category, etc.) unless it's a new item that needs full details.
+The primary goal is to accurately estimate travel times between consecutive activities for each day.
+
+Here is the itinerary that needs travel time recalculation:
+City: {city}
+Total Days: {total_days}
+
+Itinerary Details:
+{itinerary_xml_string}
+
+**XML OUTPUT REQUIREMENTS:**
+1.  The entire response MUST be a single, valid XML block starting with `<itinerary>` and ending with `</itinerary>`.
+2.  Do NOT include any introductory text, explanations, or any character outside the main XML structure.
+3.  The root element must be `<itinerary>` with attributes `city` and `total_days`.
+4.  For each `<day>` and each `<item>` provided in the input, reproduce them exactly, EXCEPT for the `<travel_from_previous>` element.
+5.  You MUST recalculate and update the content of the `<travel_from_previous>` element for every item in each day.
+    - For the first item of each day, `<travel_from_previous>` should be "N/A".
+    - For subsequent items, estimate the travel time from the previously listed item. Be realistic (e.g., "车程约15分钟", "步行约10分钟").
+6.  All other elements and attributes (`<category>`, `<time>`, `<poi_name>`, `<description>`, `<lat>`, `<lon>`, `<opening_hours>`, `<booking_info>`, `<price>`, `<local_tip>`) MUST remain UNCHANGED from the input itinerary.
+7.  Ensure the output XML is well-formed and directly usable.
+
+**EXAMPLE of the input `itinerary_xml_string` format (it will be a string representation of XML like this):**
+```xml
+<itinerary city="杭州" total_days="1">
+  <day number="1">
+    <item>
+      <category>景点</category>
+      <time>上午 (09:00-11:00)</time>
+      <poi_name>西湖</poi_name>
+      <description>...</description>
+      <lat>30.24</lat>
+      <lon>120.15</lon>
+      <travel_from_previous>N/A</travel_from_previous>
+      <opening_hours>全天</opening_hours>
+      <booking_info>无需</booking_info>
+      <price>免费</price>
+      <local_tip>...</local_tip>
+    </item>
+    <item>
+      <category>美食</category>
+      <time>中午 (11:30-13:00)</time>
+      <poi_name>楼外楼</poi_name>
+      <description>...</description>
+      <lat>30.25</lat>
+      <lon>120.14</lon>
+      <travel_from_previous>旧的或不正确的旅行时间</travel_from_previous>
+      <opening_hours>11:00-21:00</opening_hours>
+      <booking_info>...</booking_info>
+      <price>人均¥200</price>
+      <local_tip>...</local_tip>
+    </item>
+  </day>
+</itinerary>
+```
+
+Now, process the provided itinerary and return the updated XML with correct `<travel_from_previous>` times.
+"""
