@@ -107,7 +107,7 @@ Here is the context:
   <lon>120.0217</lon>
   <travel_from_previous>车程约45分钟</travel_from_previous>
   <opening_hours>09:00-17:00</opening_hours>
-  <booking_info>需通过“良渚古城遗址公园”小程序或公众号实名预约</booking_info>
+  <booking_info>需通过"良渚古城遗址公园"小程序或公众号实名预约</booking_info>
   <price>门票: ¥60</price>
   <local_tip>园区很大，建议乘坐观光车游览，可以节省体力。</local_tip>
 </item>
@@ -172,6 +172,43 @@ Itinerary Details:
   </day>
 </itinerary>
 ```
-
 Now, process the provided itinerary and return the updated XML with correct `<travel_from_previous>` times.
+"""
+
+WEATHER_CONTINGENCY_PROMPT_TEMPLATE = """
+You are a pragmatic and quick-thinking travel assistant. Your task is to provide a suitable indoor alternative for an outdoor activity in case of bad weather (e.g., rain, extreme heat).
+
+Here is the context for the user and the activity:
+- City: {city}
+- User's Interests: {interests_str}
+{weather_info}
+- The outdoor activity to replace:
+  - Name: {poi_name}
+  - Time: {time}
+  - Original Description: {description}
+
+**REQUIREMENTS:**
+1.  Suggest a NEW, single, INDOOR activity that is a good alternative.
+2.  The suggestion should be geographically close to the original activity if possible, and align with the user's general interests.
+3.  Your entire response MUST be a single, valid XML `<item>` block.
+4.  Do NOT include any introductory text or explanations.
+5.  The `<item>` element MUST contain the same TEN child elements as the main prompt: `<category>`, `<time>`, `<poi_name>`, `<description>`, `<lat>`, `<lon>`, `<travel_from_previous>`, `<opening_hours>`, `<booking_info>`, `<price>`, and `<local_tip>`.
+6.  The `<time>` and `<travel_from_previous>` should be kept the same as the item being replaced. The description should clearly state that this is a "Plan B" for bad weather.
+
+**EXAMPLE of the required XML output:**
+<item>
+  <category>体验</category>
+  <time>下午 (15:00-17:00)</time>
+  <poi_name>猫的天空之城概念书店(西湖店)</poi_name>
+  <description>【恶劣天气备选】如果天气不佳，这里是绝佳的室内去处。一家温馨的书店，可以阅读、喝咖啡，给未来的自己写一张明信片。</description>
+  <lat>30.2550</lat>
+  <lon>120.1562</lon>
+  <travel_from_previous>车程约10分钟</travel_from_previous>
+  <opening_hours>10:00-22:00</opening_hours>
+  <booking_info>无需预订</booking_info>
+  <price>人均 ¥40</price>
+  <local_tip>店内的手绘地图和文创产品很有特色，值得一看。</local_tip>
+</item>
+
+Now, generate a new indoor `<item>` block as a weather contingency plan.
 """

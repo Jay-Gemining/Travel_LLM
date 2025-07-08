@@ -47,6 +47,11 @@ class RegenerateRequest(BaseModel):
     budget: str
     food_preferences: FoodPreferences
 
+class WeatherContingencyRequest(BaseModel):
+    city: str
+    interests: List[str]
+    activity_to_replace: ItineraryItem
+
 # --- API Response Models ---
 
 class ItineraryResponse(BaseModel):

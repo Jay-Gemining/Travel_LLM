@@ -3,21 +3,26 @@ import xml.etree.ElementTree as ET
 import asyncio
 from .schemas import (
     ItineraryResponse, DayPlan, ItineraryItem, RegenerateRequest, PlanRequest,
-    FoodPreferences, SaveResponse
+    FoodPreferences, SaveResponse, WeatherContingencyRequest
 )
-from .prompt_template import PROMPT_TEMPLATE, REGENERATE_PROMPT_TEMPLATE, RECALCULATE_TRAVEL_PROMPT_TEMPLATE
+from .prompt_template import PROMPT_TEMPLATE, REGENERATE_PROMPT_TEMPLATE, RECALCULATE_TRAVEL_PROMPT_TEMPLATE, WEATHER_CONTINGENCY_PROMPT_TEMPLATE
 import os
 import uuid
 import xml.etree.ElementTree as ET
 import json
 from openai import OpenAI
 from dotenv import load_dotenv
+import requests
+import logging
+
+logger = logging.getLogger(__name__)
 
 # --- Environment and API Key Setup ---
 load_dotenv()
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL")
 MODEL = os.environ.get("MODEL")
+AMAP_API_KEY = os.environ.get("AMAP_API_KEY")
 
 # --- Utility Functions ---
 
@@ -88,6 +93,67 @@ def _clean_xml_string(xml_string: str) -> str:
         xml_string = xml_string.split("?>", 1)[-1].strip()
     return xml_string.strip()
 
+async def _get_adcode_from_city(city_name: str) -> str | None:
+    """Gets the adcode for a given city name using AMap Geocoding API."""
+    if not AMAP_API_KEY:
+        logger.warning("AMAP_API_KEY is not set. Cannot get adcode.")
+        return None
+
+    geocode_url = f"https://restapi.amap.com/v3/geocode/geo?address={city_name}&key={AMAP_API_KEY}"
+    try:
+        response = await asyncio.to_thread(requests.get, geocode_url)
+        response.raise_for_status()
+        data = response.json()
+
+        if data and data["status"] == "1" and data["geocodes"]:
+            # For cities, adcode is usually in the first geocode result
+            return data["geocodes"][0]["adcode"]
+        else:
+            logger.warning(f"Could not get adcode for {city_name}: {data.get('info', 'Unknown error')}")
+            return None
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error fetching adcode for {city_name}: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"An unexpected error occurred while fetching adcode: {e}")
+        return None
+
+async def get_weather_data(city: str) -> dict:
+    """Fetches current weather data for a given city using AMap Weather API."""
+    if not AMAP_API_KEY:
+        logger.warning("AMAP_API_KEY is not set. Skipping weather data fetching.")
+        return {}
+
+    adcode = await _get_adcode_from_city(city)
+    if not adcode:
+        return {}
+
+    weather_url = f"https://restapi.amap.com/v3/weather/weatherInfo?city={adcode}&key={AMAP_API_KEY}&extensions=base"
+    try:
+        response = await asyncio.to_thread(requests.get, weather_url)
+        response.raise_for_status()
+        data = response.json()
+
+        if data and data["status"] == "1" and data["lives"]:
+            live_weather = data["lives"][0]
+            return {
+                "description": live_weather["weather"],
+                "temp": float(live_weather["temperature"]),
+                "feels_like": float(live_weather["temperature"]), # AMap base weather doesn't have feels_like, use temp
+                "humidity": float(live_weather["humidity"]),
+                "wind_speed": live_weather["windpower"], # AMap returns windpower as string like "≤3"
+                "city_name": live_weather["city"]
+            }
+        else:
+            logger.warning(f"Could not get weather data for {city} (adcode: {adcode}): {data.get('info', 'Unknown error')}")
+            return {}
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error fetching weather data for {city}: {e}")
+        return {}
+    except Exception as e:
+        logger.error(f"An unexpected error occurred while fetching weather data: {e}")
+        return {}
+
 # --- Core Service Functions ---
 
 async def generate_plan_from_llm(request: PlanRequest) -> str:
@@ -120,6 +186,23 @@ async def regenerate_activity_from_llm(request: RegenerateRequest) -> str:
         food_dietary_restrictions=request.food_preferences.dietary_restrictions or "无",
         day_plan_str=day_plan_str,
         activity_to_replace_str=activity_to_replace_str
+    )
+    return await _call_llm_async(prompt)
+
+async def generate_weather_contingency_plan(request: WeatherContingencyRequest, weather_data: dict = None) -> str:
+    """Generates a weather contingency plan for a single activity."""
+    activity = request.activity_to_replace
+    weather_info = "" 
+    if weather_data:
+        weather_info = f"\n- Current Weather in {weather_data.get('city_name', request.city)}: {weather_data.get('description')}, Temperature: {weather_data.get('temp')}°C, Feels like: {weather_data.get('feels_like')}°C."
+
+    prompt = WEATHER_CONTINGENCY_PROMPT_TEMPLATE.format(
+        city=request.city,
+        interests_str=", ".join(request.interests),
+        poi_name=activity.poi_name,
+        time=activity.time,
+        description=activity.description,
+        weather_info=weather_info
     )
     return await _call_llm_async(prompt)
 

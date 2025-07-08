@@ -3,6 +3,9 @@ import axios from 'axios';
 import PoiCard from './PoiCard';
 import MapView from './MapView';
 import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
+import AddActivityModal from './AddActivityModal'; // Import the modal
+import WeatherContingency from './WeatherContingency'; // Import the new component
+import { v4 as uuidv4 } from 'uuid'; // To generate unique IDs
 
 // --- Helper Functions ---
 const copyToClipboard = (text, onSuccess) => {
@@ -39,6 +42,9 @@ const ResultsPage = ({ plan, setPlan, onReset, initialRequest }) => {
   const [showShareFeedback, setShowShareFeedback] = useState(false);
   const [saveStatus, setSaveStatus] = useState({ loading: false, message: '' });
   const [isUpdatingItinerary, setIsUpdatingItinerary] = useState(false);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [weatherContingency, setWeatherContingency] = useState({ plan: null, dayIndex: -1, activityIndex: -1 });
+  const [isWeatherLoading, setIsWeatherLoading] = useState(false);
 
   useEffect(() => {
     if (!plan || !Array.isArray(plan.itinerary)) {
@@ -197,6 +203,70 @@ const ResultsPage = ({ plan, setPlan, onReset, initialRequest }) => {
     });
   };
 
+  const handleAddActivity = (newActivityData) => {
+    const newActivity = {
+      ...newActivityData,
+      id: uuidv4(),
+      description: "手动添加的活动。",
+      lat: 0, // Placeholder coordinates
+      lon: 0,
+      travel_from_previous: "N/A", // Will be recalculated
+      opening_hours: "N/A",
+      booking_info: "N/A",
+      price: "N/A",
+      local_tip: "N/A",
+    };
+
+    const updatedPlan = { ...plan };
+    updatedPlan.itinerary[activeDayIndex].activities.push(newActivity);
+
+    setPlan(updatedPlan);
+    debouncedUpdateItineraryApiCall(updatedPlan);
+  };
+
+  const handleGetWeatherContingency = async (dayIndex, activityIndex) => {
+    setIsWeatherLoading(true);
+    const activityToReplace = plan.itinerary[dayIndex].activities[activityIndex];
+
+    try {
+      const response = await axios.post('/api/weather-contingency', {
+        city: plan.city,
+        interests: initialRequest.interests,
+        activity_to_replace: activityToReplace,
+      });
+      setWeatherContingency({ plan: response.data, dayIndex, activityIndex });
+    } catch (error) {
+      console.error("Error getting weather contingency plan:", error);
+      alert("获取天气备选方案失败，请稍后再试。");
+    } finally {
+      setIsWeatherLoading(false);
+    }
+  };
+
+  const handleAcceptContingency = () => {
+    const { plan: newActivity, dayIndex, activityIndex } = weatherContingency;
+    const newItinerary = plan.itinerary.map((day, dIdx) => {
+      if (dIdx === dayIndex) {
+        const newActivities = day.activities.map((activity, aIdx) => {
+          if (aIdx === activityIndex) {
+            return { ...newActivity, id: activity.id }; // Keep the original ID
+          }
+          return activity;
+        });
+        return { ...day, activities: newActivities };
+      }
+      return day;
+    });
+    const updatedPlan = { ...plan, itinerary: newItinerary };
+    setPlan(updatedPlan);
+    setWeatherContingency({ plan: null, dayIndex: -1, activityIndex: -1 });
+    debouncedUpdateItineraryApiCall(updatedPlan);
+  };
+
+  const handleDeclineContingency = () => {
+    setWeatherContingency({ plan: null, dayIndex: -1, activityIndex: -1 });
+  };
+
   if (!plan || !Array.isArray(plan.itinerary) || plan.itinerary.length === 0 || !plan.itinerary.some(day => day && day.activities && day.activities.length > 0)) {
     return (
       <div className="p-6 max-w-3xl mx-auto text-center">
@@ -272,6 +342,9 @@ const ResultsPage = ({ plan, setPlan, onReset, initialRequest }) => {
               <h2 className="text-2xl font-semibold text-gray-800 mb-4">
                 第 {currentDayData.day} 天活动安排
               </h2>
+              <button onClick={() => setIsAddModalOpen(true)} className="w-full mb-4 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-colors duration-150">
+                + 添加新活动
+              </button>
               <DragDropContext onDragEnd={handleOnDragEnd}>
                 <Droppable droppableId="activities">
                   {(provided) => (
@@ -292,7 +365,17 @@ const ResultsPage = ({ plan, setPlan, onReset, initialRequest }) => {
                                   isFirst={index === 0}
                                   onDeleteActivity={() => handleDeleteActivity(activeDayIndex, index)}
                                   onTimeChange={(newTime) => handleTimeChange(activeDayIndex, index, newTime)}
+                                  onGetWeatherContingency={() => handleGetWeatherContingency(activeDayIndex, index)}
+                                  isWeatherContingencyLoading={isWeatherLoading && weatherContingency.activityIndex === index}
                                 />
+                                {weatherContingency.plan && weatherContingency.dayIndex === activeDayIndex && weatherContingency.activityIndex === index && (
+                                  <WeatherContingency 
+                                    activity={weatherContingency.plan} 
+                                    onAccept={handleAcceptContingency} 
+                                    onDecline={handleDeclineContingency} 
+                                    isLoading={isWeatherLoading}
+                                  />
+                                )}
                               </div>
                             )}
                           </Draggable>
@@ -315,6 +398,11 @@ const ResultsPage = ({ plan, setPlan, onReset, initialRequest }) => {
           </div>
         )}
       </div>
+      <AddActivityModal 
+        isOpen={isAddModalOpen} 
+        onClose={() => setIsAddModalOpen(false)} 
+        onAddActivity={handleAddActivity} 
+      />
     </div>
   );
 };

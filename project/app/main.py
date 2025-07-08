@@ -5,7 +5,8 @@ from .schemas import (
     ItineraryResponse, 
     RegenerateRequest, 
     ItineraryItem, 
-    SaveResponse
+    SaveResponse,
+    WeatherContingencyRequest
 )
 from .services import (
     generate_plan_from_llm, 
@@ -13,7 +14,9 @@ from .services import (
     regenerate_activity_from_llm,
     parse_single_activity_xml,
     save_itinerary_to_file,
-    recalculate_itinerary_travel_times
+    recalculate_itinerary_travel_times,
+    generate_weather_contingency_plan,
+    get_weather_data
 )
 import logging
 
@@ -117,3 +120,25 @@ async def update_itinerary(request_plan: ItineraryResponse = Body(...)):
     except Exception as e:
         logger.error(f"Unexpected error during itinerary update: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred during update: {e}")
+
+@app.post("/api/weather-contingency", response_model=ItineraryItem)
+async def get_weather_contingency(request: WeatherContingencyRequest):
+    """Receives an outdoor activity and returns an indoor alternative."""
+    logger.info(f"Received weather contingency request for '{request.activity_to_replace.poi_name}'")
+    try:
+        logger.info("Getting weather contingency suggestion from LLM...")
+        weather_data = await get_weather_data(request.city)
+        xml_response = await generate_weather_contingency_plan(request, weather_data)
+        logger.info(f"Received LLM XML response: {xml_response}")
+
+        logger.info("Parsing single activity XML for contingency plan...")
+        new_activity = parse_single_activity_xml(xml_response)
+        logger.info(f"Successfully parsed new contingency activity: {new_activity.poi_name}")
+
+        return new_activity
+    except ValueError as e:
+        logger.error(f"ValueError during weather contingency generation: {e}")
+        raise HTTPException(status_code=500, detail=f"LLM response parsing error: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error during weather contingency generation: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
